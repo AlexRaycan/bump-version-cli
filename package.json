@@ -1,6 +1,6 @@
 {
   "name": "@alexraycan/bump-version-cli",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A command-line utility for bumping the version of any project",
   "bin": {
     "bump-version": "./index.js"
@@ -10,7 +10,13 @@
     "inquirer": "^9.0.0",
     "semver": "^7.3.7"
   },
-  "keywords": ["cli", "version", "bump", "git", "npm"],
+  "keywords": [
+    "cli",
+    "version",
+    "bump",
+    "git",
+    "npm"
+  ],
   "author": "Alex Ray <alexraycan@gmail.com>",
   "license": "MIT"
 }
