@@ -35,6 +35,11 @@ async function main() {
 	const pkg = loadPackageJson();
 	const currentVersion = pkg.version;
 
+	// Определяем, является ли текущая версия pre-release
+	const isCurrentPrerelease = semver.prerelease(currentVersion) !== null;
+	const currentPrereleaseInfo = semver.prerelease(currentVersion);
+	const currentPrereleaseId = currentPrereleaseInfo ? currentPrereleaseInfo[0] : null;
+
 	// 2) Предварительный расчёт «кандидатов» версий
 	const nextPatchVersion = getNextVersion(currentVersion, 'patch');
 	const nextMinorVersion = getNextVersion(currentVersion, 'minor');
@@ -43,6 +48,48 @@ async function main() {
 	const nextPreminorVersion = getNextVersion(currentVersion, 'preminor');
 	const nextPremajorVersion = getNextVersion(currentVersion, 'premajor');
 	const nextPrereleaseVersion = getNextVersion(currentVersion, 'prerelease');
+
+	// Если текущая версия - pre-release, добавляем специальные варианты
+	let specialPrereleaseOptions = [];
+	if (isCurrentPrerelease) {
+		// Для текущего pre-release типа - просто инкремент номера
+		const nextSamePrereleaseVersion = semver.inc(currentVersion, 'prerelease');
+		specialPrereleaseOptions.push({
+			name: `${currentPrereleaseId} increment (${currentVersion} → ${nextSamePrereleaseVersion})`,
+			value: 'prerelease-same'
+		});
+
+		// Переход к финальной версии (убираем pre-release)
+		const finalVersion = `${semver.major(currentVersion)}.${semver.minor(currentVersion)}.${semver.patch(currentVersion)}`;
+		specialPrereleaseOptions.push({
+			name: `finalize (${currentVersion} → ${finalVersion})`,
+			value: 'finalize'
+		});
+
+		// Переход к другим pre-release типам с тем же номером версии
+		const baseVersion = `${semver.major(currentVersion)}.${semver.minor(currentVersion)}.${semver.patch(currentVersion)}`;
+		if (currentPrereleaseId !== 'alpha') {
+			const alphaVersion = `${baseVersion}-alpha.1`;
+			specialPrereleaseOptions.push({
+				name: `switch to alpha (${currentVersion} → ${alphaVersion})`,
+				value: 'switch-alpha'
+			});
+		}
+		if (currentPrereleaseId !== 'beta') {
+			const betaVersion = `${baseVersion}-beta.1`;
+			specialPrereleaseOptions.push({
+				name: `switch to beta (${currentVersion} → ${betaVersion})`,
+				value: 'switch-beta'
+			});
+		}
+		if (currentPrereleaseId !== 'rc') {
+			const rcVersion = `${baseVersion}-rc.1`;
+			specialPrereleaseOptions.push({
+				name: `switch to rc (${currentVersion} → ${rcVersion})`,
+				value: 'switch-rc'
+			});
+		}
+	}
 
 	// 3) First step: ask if we want "tag-only" or increment
 	const { action } = await inquirer.prompt([
@@ -120,7 +167,7 @@ async function main() {
 						return;
 					}
 				} catch (ignore) {
-					console.log('⚠️ Failed to check remote tags, continuing…');
+					console.log('⚠️ Failed to check remote tags, continuing…', ignore);
 				}
 
 				// If tag does not exist, push
@@ -150,39 +197,58 @@ async function main() {
 				{ name: `preminor (${currentVersion} → ${nextPreminorVersion})`, value: 'preminor' },
 				{ name: `premajor (${currentVersion} → ${nextPremajorVersion})`, value: 'premajor' },
 				{ name: `prerelease (${currentVersion} → ${nextPrereleaseVersion})`, value: 'prerelease' },
+				...specialPrereleaseOptions, // Добавляем специальные варианты для pre-release
 			],
 		},
 	]);
 
 	// Формируем команду `npm version`
-	let versionCommand = `npm version ${versionType}`;
+	let versionCommand;
 	let preidOption = '';
 
-	if (versionType.startsWith('pre')) {
-		// Ask for pre-identifier
-		const standardVersion = getNextVersion(currentVersion, versionType);
-		const alphaVersion = getNextVersion(currentVersion, versionType, 'alpha');
-		const betaVersion = getNextVersion(currentVersion, versionType, 'beta');
-		const rcVersion = getNextVersion(currentVersion, versionType, 'rc');
+	// Обрабатываем специальные случаи для pre-release
+	if (versionType === 'prerelease-same') {
+		// Просто инкремент текущего pre-release
+		versionCommand = 'npm version prerelease';
+	} else if (versionType === 'finalize') {
+		// Убираем pre-release суффикс, оставляя только основную версию
+		const finalVersion = `${semver.major(currentVersion)}.${semver.minor(currentVersion)}.${semver.patch(currentVersion)}`;
+		versionCommand = `npm version ${finalVersion}`;
+	} else if (versionType.startsWith('switch-')) {
+		// Переключение на другой тип pre-release
+		const newPrereleaseType = versionType.replace('switch-', '');
+		const baseVersion = `${semver.major(currentVersion)}.${semver.minor(currentVersion)}.${semver.patch(currentVersion)}`;
+		const newVersion = `${baseVersion}-${newPrereleaseType}.1`;
+		versionCommand = `npm version ${newVersion}`;
+	} else {
+		versionCommand = `npm version ${versionType}`;
 
-		const { preReleaseType } = await inquirer.prompt([
-			{
-				type: 'list',
-				name: 'preReleaseType',
-				message: `Select pre-release (${currentVersion} → …):`,
-				loop: false,
-				choices: [
-					{ name: `standard (${currentVersion} → ${standardVersion})`, value: 'standard' },
-					{ name: `alpha (${currentVersion} → ${alphaVersion})`, value: 'alpha' },
-					{ name: `beta (${currentVersion} → ${betaVersion})`, value: 'beta' },
-					{ name: `rc (${currentVersion} → ${rcVersion})`, value: 'rc' },
-				],
-			},
-		]);
+		if (versionType.startsWith('pre')) {
+			// Ask for pre-identifier
+			const standardVersion = getNextVersion(currentVersion, versionType);
+			const alphaVersion = getNextVersion(currentVersion, versionType, 'alpha');
+			const betaVersion = getNextVersion(currentVersion, versionType, 'beta');
+			const rcVersion = getNextVersion(currentVersion, versionType, 'rc');
 
-		if (preReleaseType !== 'standard') {
-			preidOption = ` --preid=${preReleaseType}`;
-			versionCommand += preidOption;
+			const { preReleaseType } = await inquirer.prompt([
+				{
+					type: 'list',
+					name: 'preReleaseType',
+					message: `Select pre-release (${currentVersion} → …):`,
+					loop: false,
+					choices: [
+						{ name: `standard (${currentVersion} → ${standardVersion})`, value: 'standard' },
+						{ name: `alpha (${currentVersion} → ${alphaVersion})`, value: 'alpha' },
+						{ name: `beta (${currentVersion} → ${betaVersion})`, value: 'beta' },
+						{ name: `rc (${currentVersion} → ${rcVersion})`, value: 'rc' },
+					],
+				},
+			]);
+
+			if (preReleaseType !== 'standard') {
+				preidOption = ` --preid=${preReleaseType}`;
+				versionCommand += preidOption;
+			}
 		}
 	}
 
