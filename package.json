@@ -2,6 +2,14 @@
   "name": "@alexraycan/bump-version-cli",
   "version": "1.0.1",
   "description": "A command-line utility for bumping the version of any project",
+  "homepage": "https://github.com/AlexRaycan/bump-version-cli#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AlexRaycan/bump-version-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AlexRaycan/bump-version-cli/issues"
+  },
   "bin": {
     "bump-version": "./index.js"
   },
